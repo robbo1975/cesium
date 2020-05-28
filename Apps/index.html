@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <!-- Use correct character set. -->
+  <meta charset="utf-8" />
+  <!-- Tell IE to use the latest, best version. -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <!-- Make the application on mobile take up the full browser screen and disable user scaling. -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no" />
+  <title>Cesium Viewer</title>
+  <link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
+  <link rel="stylesheet" href="CesiumViewer/CesiumViewer.css" media="screen" />
+</head>
+
+<body style="background: #000;">
+
+  <div id="cesiumContainer" class="fullWindow"></div>
+
+  <script type="module">
+    //set up to work with source rather than compiled version
+    window.CESIUM_BASE_URL = "../Source/";
+    import {
+      TileMapServiceImageryProvider,
+      Viewer,
+      MapboxStyleImageryProvider,
+      MapboxVectorTileImageryProvider
+    } from "../Source/Cesium.js";
+
+    //main calls here
+    var imageryProvider;
+
+    // var mapbox = new MapboxStyleImageryProvider({
+    //   url: 'https://api.mapbox.com/styles/v1/',
+    //   styleId: 'streets-v11'
+    // });
+
+    // var mapbox = new MapboxVectorTileImageryProvider({
+    //   url : 'https://tiles.arcgis.com/tiles/7aA1sxHXTU7h1OXx/arcgis/rest/services/isfahan_map_layer_order_v2contours_v13/VectorTileServer/tile/{z}/{y}/{x}.pbf',
+    //   styleUrl : 'https://tiles.arcgis.com/tiles/7aA1sxHXTU7h1OXx/arcgis/rest/services/isfahan_map_layer_order_v2contours_v13/VectorTileServer/resources/styles'
+    // });
+
+    // var mapbox = new MapboxVectorTileImageryProvider({
+    //   url : 'https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/{z}/{x}/{y}.vector.pbf?access_token=pk.eyJ1Ijoicm9iYm83NSIsImEiOiJjazliZW9mMnYwM2VwM21zM3Z2ZXRzMmJmIn0.AEkTR8J0P6YA55ttxT4AqQ',
+    //   styleUrl : 'https://api.mapbox.com/styles/v1/mapbox/streets-v11?access_token=pk.eyJ1Ijoicm9iYm83NSIsImEiOiJjazliZW9mMnYwM2VwM21zM3Z2ZXRzMmJmIn0.AEkTR8J0P6YA55ttxT4AqQ'
+    // });
+
+    var mapbox = new MapboxVectorTileImageryProvider({
+      url : 'https://basemaps.arcgis.com/arcgis/rest/services/OpenStreetMap_v2/VectorTileServer/tile/{z}/{y}/{x}.pbf',
+      styleUrl : 'https://www.arcgis.com/sharing/rest/content/items/3e1a00aeae81496587988075fe529f71/resources/styles/root.json'
+    });
+    //https://basemaps.arcgis.com/arcgis/rest/services/OpenStreetMap_v2/VectorTileServer/tile/12/1362/2046.pbf
+    //https://cdn.arcgis.com/sharing/rest/content/items/3e1a00aeae81496587988075fe529f71/resources/sprites/sprite.json
+    //https://cdn.arcgis.com/sharing/rest/content/items/7dc6cea0b1764a1f9af2e679f642f0f5/resources/styles/root.json
+    //https://www.arcgis.com/sharing/rest/content/items/3e1a00aeae81496587988075fe529f71/resources/styles/root.json?f=json
+    var viewer;
+
+    viewer = new Viewer("cesiumContainer", {
+      imageryProvider: mapbox
+    });
+
+
+  </script>
+</body>
+
+</html>

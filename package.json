@@ -123,5 +123,6 @@
     "prettier": "prettier --write \"**/*\"",
     "prettier-check": "prettier --check \"**/*\"",
     "pretty-quick": "pretty-quick"
-  }
+  },
+  "dependencies": {}
 }
