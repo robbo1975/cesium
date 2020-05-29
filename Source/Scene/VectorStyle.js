@@ -43,7 +43,7 @@ VectorStyle.prototype._loadJsonStyle = function(resource) {
         var indexUrl = style.sprite + ".json"
         var imageUrl = style.sprite + ".png"
         that._loadSprites(indexUrl, imageUrl);
-
+        //console.log(imageUrl);
         //tiles layers must be ordered by the style order
         //cache style information into variable for use
         for (var i = 0; i < Object.keys(style.layers).length; i++) {
@@ -59,9 +59,22 @@ VectorStyle.prototype._loadJsonStyle = function(resource) {
 }
 
 VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTile) {
+
     var layers = Object.keys(tile.layers);
     var styles = Object.keys(this._styleLayers);
     var context = canvas.getContext("2d");
+
+    // canvas.width = canvas.width * 2;
+    // canvas.height = canvas.height * 2;
+    // canvas.style.width = canvas.width / 2;
+    // canvas.style.height = canvas.height / 2;
+    // context.scale(2,2);
+    //fix blur
+    var scale = window.devicePixelRatio;
+    canvas.width = canvas.width * scale;
+    canvas.height = canvas.height * scale;
+    context.scale(scale, scale);
+
     //loop over styles (to get correct order of layers)
     for (var l = 0; l < styles.length; l++) {
         var jStyle = this._styleLayers[styles[l]];
@@ -74,12 +87,13 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
         //context.fillRect(0,0,256,256);
 
         canvas.style.background = this._backgroundColor;
-        context.fillStyle = this._backgroundColor;
+        //context.fillStyle = this._backgroundColor;
 
         //context.stroke();
 
+        context.fillStyle = this._backgroundColor;
         if ("layout" in jStyle && "visibility" in jStyle.layout && jStyle.layout.visibility === "none") {
-            context.fillRect(0, 0, 256, 256); 
+            context.fillRect(0, 0, 256, 256);
             continue;
         }
 
@@ -95,19 +109,34 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
         var extentFactor = canvas.width / layer.extent; // Vector tile works with extent [0, 4095], but canvas is only [0,255]
 
         //if styles' specified zoom levels are not within current zoom, move to next style layer
-        if ("minzoom" in jStyle && nativeTile.level < parseInt(jStyle.minzoom)) { continue };
+        if ("minzoom" in jStyle && nativeTile.level < parseInt(jStyle.minzoom)) { continue; }
         if ("maxzoom" in jStyle && nativeTile.level >= parseInt(jStyle.maxzoom)) { continue; }
 
         var textLabel = "";
-        // Features
+
+        context.lineJoin = "miter";
+        context.lineCap = "butt";
+        var fillColor = getPaintValue(jStyle, nativeTile.level, "fill-color");
+        var lineColor = getPaintValue(jStyle, nativeTile.level, "line-color");
+        var lineWidth = getPaintValue(jStyle, nativeTile.level, "line-width");
+        var lineOpacity = getPaintValue(jStyle, nativeTile.level, "line-opacity");
+        var outlineColor = getPaintValue(jStyle, nativeTile.level, "fill-outline-color");
+        //TODO: paint["line-dasharray"] context.setLineDash(); -  need to pull out the array here so need a new function!
+        //TODO: paint["fill-pattern"] context.fillStyle = pattern; - I think this references a secondary style entry eg 'landcover/bare rock/pattern' -> 'landcover/bare rock/fill'
+        var lineJoin = getLayoutValue(jStyle, nativeTile.level, "line-join");
+        var lineCap = getLayoutValue(jStyle, nativeTile.level, "line-cap");
+
+        if (defined(fillColor)) context.fillStyle = fillColor;
+        if (defined(outlineColor)) context.strokeStyle = outlineColor;
+        if (defined(lineColor)) context.strokeStyle = lineColor;
+        if (defined(lineWidth)) context.lineWidth = lineWidth;
+        if (defined(lineJoin)) context.lineJoin = lineJoin;
+        if (defined(lineCap)) context.lineCap = lineCap;
+
+         // Features
         //loop through each feature within the layer
         for (var i = 0; i < layer.length; i++) {
-            //context.strokeStyle = "black";
-            //context.fillStyle = "black";
-            context.lineWidth = 1;
             canvas.style.background = this._backgroundColor;
-            context.fillStyle = this._backgroundColor;
-            //context.strokeStyle = this._backgroundColor;
 
 
             var feature = layer.feature(i);
@@ -128,15 +157,43 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
             //only process known feature types
             if (feature.type > UNKNOWN_FEATURE) {
                 var coordinates = getCoordinates(nativeTile, requestedTile, layer, feature);
-                if (!defined(coordinates)) continue;
-                if (feature.type === POLYGON_FEATURE) {
-                    drawPolygons(context, jStyle, extentFactor, coordinates);
-                } else if (feature.type === POINT_FEATURE) {
-                    drawPoints(context, jStyle, extentFactor, coordinates, feature.properties, this._sprites);
-                } else if (feature.type === LINESTRING_FEATURE) {
-                    drawLines(context, jStyle, extentFactor, coordinates);
+                if (!defined(coordinates)) {
+                    continue;
+                }
+
+                //context.translate(0.5, 0.5);//TODO: maybe can be removed - fix in main method
+
+                if (feature.type === POLYGON_FEATURE && jStyle.type === "fill") {
+                    //drawPolygons(context, jStyle, extentFactor, coordinates, nativeTile.level);
+                    drawPath(context, extentFactor, coordinates);
+                    if (defined(fillColor)) context.fill();
+                    if (defined(outlineColor)) context.stroke();
+                } else if (feature.type === POLYGON_FEATURE && jStyle.type === "line") {
+                    //drawLines(context, jStyle, extentFactor, coordinates, nativeTile.level);
+                    drawPath(context, extentFactor, coordinates);
+                    if (defined(fillColor)) context.fill();
+                    if (defined(lineOpacity)) context.globalAlpha = lineOpacity;
+                    if (defined(lineColor) && defined(lineWidth)) context.stroke();
+                    context.globalAlpha = 1.0;
+                } else if (feature.type === POLYGON_FEATURE && jStyle.type === "symbol") {
+                    //drawPoints(context, jStyle, extentFactor, coordinates, nativeTile.level, feature.properties, this._sprites);
+                } else if (feature.type === LINESTRING_FEATURE && jStyle.type === "line") {
+                    //drawLines(context, jStyle, extentFactor, coordinates, nativeTile.level);
+                    //console.log(""+jStyle.id + " " + lineWidth);
+                    drawPath(context, extentFactor, coordinates);
+                    if (defined(lineOpacity)) context.globalAlpha = lineOpacity;                    
+                    if (defined(lineColor) && defined(lineWidth)) context.stroke();
+                    context.globalAlpha = 1.0;
+                } else if (feature.type === LINESTRING_FEATURE && jStyle.type === "symbol") {
+                    //drawLines(context, jStyle, extentFactor, coordinates, nativeTile.level);
+                    // drawPath(context, extentFactor, coordinates);
+                    // if (defined(lineOpacity)) context.globalAlpha = lineOpacity;
+                    // if (defined(lineColor) && defined(lineWidth)) context.stroke();
+                    // context.globalAlpha = 1.0;
+                } else if (feature.type === POINT_FEATURE && jStyle.type === "symbol") {
+                    //drawPoints(context, jStyle, extentFactor, coordinates, nativeTile.level, feature.properties, this._sprites);
                 } else {
-                    console.log("***NOT POLYGON***");
+                    console.log("***NOT POLYGON***" + feature.type + " " + jStyle.type);
                     console.log(
                         "Unexpected geometry type: " +
                         feature.type +
@@ -144,6 +201,7 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
                         [requestedTile.level, requestedTile.x, requestedTile.y].join("/")
                     );
                 }
+                //context.translate(-0.5, -0.5);//TODO: maybe can be removed - fix in main method
             }
         }
     }
@@ -210,33 +268,222 @@ function getCoordinates(nativeTile, requestedTile, layer, feature) {
     return coordinates;
 }
 
-function drawPolygons(context, jStyle, extentFactor, coordinates) {
-    context.translate(0.5, 0.5);
-    // context.lineWidth = 1;
-    // context.fillStyle = "#000000";
-    // context.strokeStyle = "#000000";
-    if ("paint" in jStyle && "fill-color" in jStyle.paint) context.fillStyle = jStyle.paint["fill-color"];
-    if ("paint" in jStyle && "fill-outline-color" in jStyle.paint) { context.strokeStyle = jStyle.paint["fill-outline-color"] } else { context.strokeStyle = context.fillStyle };
+// function setDrawingContext(context, style, zoomLevel){
+//     var fillColor = getPaintValue(style, zoomLevel, "fill-color");
+//     if (defined(fillColor)) context.fillStyle = fillColor;
+// }
 
+function getPaintValue(style, zoomLevel, field) {
+    var value = undefined;
+    if ("paint" in style && field in style.paint) {
+        if (defined(style.paint[field].stops)) {
+            //note that 'zoom functions' (i.e. stops) are reportedly deprecated
+            //TODO: interpolate between zoom levels
+            if (Array.isArray(style.paint[field].stops)) {
+                var arr = style.paint[field].stops;
+                //for (var x = 0; x < arr.length; x++) {
+                for (var x = arr.length - 1; x >= 0; x--) {
+                    if (zoomLevel >= arr[x][0]) {
+                        value = arr[x][1];
+                        break;
+                    }
+                }
+            }
+        } else {
+            value = style.paint[field];
+        }
+    }
+    return value;
+}
+
+function getLayoutValue(style, zoomLevel, field) {
+    var value = undefined;
+    if ("layout" in style && field in style.layout) {
+        if (defined(style.layout[field].stops)) {
+            //note that 'zoom functions' (i.e. stops) are reportedly deprecated
+            //TODO: interpolate between zoom levels
+            if (Array.isArray(style.layout[field].stops)) {
+                var arr = style.layout[field].stops;
+                //for (var x = 0; x < arr.length; x++) {
+                for (var x = arr.length - 1; x >= 0; x--) {
+                    if (zoomLevel >= arr[x][0]) {
+                        value = arr[x][1];
+                        break;
+                    }
+                }
+            }
+        } else {
+            value = style.layout[field];
+        }
+    }
+    return value;
+}
+
+function drawPath(context, extentFactor, coordinates) {
     // Polygon rings
     context.beginPath();
     for (var i2 = 0; i2 < coordinates.length; i2++) {
         var pos = coordinates[i2][0];
         context.moveTo(pos.x * extentFactor, pos.y * extentFactor);
-
+        //context.fillText("" + jStyle.id, coordinates[i2][0].x, coordinates[i2][0].y);
         // Polygon ring points
         for (var j = 1; j < coordinates[i2].length; j++) {
             pos = coordinates[i2][j];
             context.lineTo(pos.x * extentFactor, pos.y * extentFactor);
+
         }
     }
     context.closePath();
-    context.fill();
-    context.stroke();
-    context.translate(-0.5, -0.5);
 }
 
-function drawPoints(context, jStyle, extentFactor, coordinates, properties, sprites) {
+
+// function getFillStyle(style, zoomLevel) {
+//     var color = undefined;
+//     if ("paint" in style && "fill-color" in style.paint) {
+//         if (defined(style.paint["fill-color"].stops)) {
+//             //note that 'zoom functions' (i.e. stops) are reportedly deprecated
+//             //TODO: interpolate between zoom levels
+//             if (Array.isArray(style.paint["fill-color"].stops)) {
+//                 var arr = style.paint["fill-color"].stops;
+//                 for (var x = 0; x < arr.length; x++) {
+//                     if (zoomLevel >= arr[x][0]) {
+//                         color = arr[x][1];
+//                         break;
+//                     }
+//                 }
+//             }
+//         } else {
+//             color = style.paint["fill-color"];
+//         }
+//     }
+//     return color;
+// }
+
+// function getStrokeStyle(style, zoomLevel) {
+//     var color = undefined;
+//     if ("paint" in style && "line-color" in style.paint) {
+//         if (defined(style.paint["line-color"].stops)) {
+//             //note that 'zoom functions' (i.e. stops) are reportedly deprecated
+//             if (Array.isArray(style.paint["line-color"].stops)) {
+//                 var arr = style.paint["line-color"].stops;
+//                 for (var x = 0; x < arr.length; x++) {
+//                     if (zoomLevel >= arr[x][0]) {
+//                         color = arr[x][1];
+//                         break;
+//                     }
+//                 }
+//             }
+//         } else {
+//             color = style.paint["line-color"];
+//         }
+//     }
+//     return color;
+// }
+
+// function getLineWidth(style, zoomLevel) {
+//     var width = undefined;
+//     if ("paint" in style && "line-width" in style.paint) {
+//         if (defined(style.paint["line-width"].stops)) {
+//             //note that 'zoom functions' (i.e. stops) are reportedly deprecated
+//             if (Array.isArray(style.paint["line-width"].stops)) {
+//                 var arr = style.paint["line-width"].stops;
+//                 for (var x = 0; x < arr.length; x++) {
+//                     if (zoomLevel >= arr[x][0]) {
+//                         width = arr[x][1];
+//                         break;
+//                     }
+//                 }
+//             }
+//         } else {
+//             width = style.paint["line-width"];
+//         }
+//     }
+//     return width;
+// }
+
+// function getLineOpacity(style, zoomLevel) {
+//     var opacity = undefined;
+//     if ("paint" in style && "line-opacity" in style.paint) {
+//         if (defined(style.paint["line-opacity"].stops)) {
+//             //note that 'zoom functions' (i.e. stops) are reportedly deprecated
+//             if (Array.isArray(style.paint["line-opacity"].stops)) {
+//                 var arr = style.paint["line-opacity"].stops;
+//                 for (var x = 0; x < arr.length; x++) {
+//                     if (zoomLevel >= arr[x][0]) {
+//                         opacity = arr[x][1];
+//                         break;
+//                     }
+//                 }
+//             }
+//         } else {
+//             opacity = style.paint["line-opacity"];
+//         }
+//     }
+//     return opacity;
+// }
+
+// function drawPolygons(context, jStyle, extentFactor, coordinates, zoomLevel) {
+//     context.translate(0.5, 0.5);//TODO: maybe can be removed - fix in main method
+
+//     var fillStyle = getFillStyle(jStyle, zoomLevel);
+//     if (defined(fillStyle)) context.fillStyle = fillStyle;
+//     setDrawingContext(context, jStyle, zoomLevel);
+//     if ("paint" in jStyle && "fill-outline-color" in jStyle.paint) { context.strokeStyle = jStyle.paint["fill-outline-color"] } else { context.strokeStyle = context.fillStyle };
+
+//     // Polygon rings
+//     context.beginPath();
+//     for (var i2 = 0; i2 < coordinates.length; i2++) {
+//         var pos = coordinates[i2][0];
+//         context.moveTo(pos.x * extentFactor, pos.y * extentFactor);
+//         //context.fillText("" + jStyle.id, coordinates[i2][0].x, coordinates[i2][0].y);
+//         // Polygon ring points
+//         for (var j = 1; j < coordinates[i2].length; j++) {
+//             pos = coordinates[i2][j];
+//             context.lineTo(pos.x * extentFactor, pos.y * extentFactor);
+
+//         }
+//     }
+//     context.closePath();
+//     if (defined(fillStyle)) context.fill();
+//     //context.stroke();
+//     context.translate(-0.5, -0.5);
+// }
+
+// function drawLines(context, jStyle, extentFactor, coordinates, zoomLevel) {
+//     //context.lineWidth = 1;
+//     context.lineJoin = "miter";
+//     context.lineCap = "butt";
+//     //context.strokeStyle = "#ffffff";
+//     context.translate(0.5, 0.5);
+//     if ("layout" in jStyle && "line-join" in jStyle.layout) context.lineJoin = jStyle.layout["line-join"];
+//     if ("layout" in jStyle && "line-cap" in jStyle.layout) context.lineCap = jStyle.layout["line-cap"];
+//     //if ("paint" in jStyle && "line-width" in jStyle.paint) context.lineWidth = parseFloat(jStyle.paint["line-width"]) / 2;
+//     var lineWidth = getLineWidth(jStyle, zoomLevel);
+//     if (defined(lineWidth)) context.lineWidth = lineWidth;
+//     var lineOpacity = getLineWidth(jStyle, zoomLevel);
+//     if (defined(lineOpacity)) context.globalAlpha = lineOpacity;
+//     //if ("paint" in jStyle && "line-color" in jStyle.paint) context.strokeStyle = jStyle.paint["line-color"];
+//     var strokeStyle = getStrokeStyle(jStyle, zoomLevel);
+//     if (defined(strokeStyle)) context.strokeStyle = strokeStyle;
+
+//     context.beginPath();
+//     for (var i2 = 0; i2 < coordinates.length; i2++) {
+//         var pos = coordinates[i2][0];
+//         context.moveTo(pos.x * extentFactor, pos.y * extentFactor);
+
+//         // lines
+//         for (var j = 1; j < coordinates[i2].length; j++) {
+//             pos = coordinates[i2][j];
+//             context.lineTo(pos.x * extentFactor, pos.y * extentFactor);
+//         }
+//     }
+//     if (defined(strokeStyle) && defined(lineWidth)) context.stroke();
+//     context.globalAlpha = 1.0;
+//     context.translate(-0.5, -0.5);
+//     //context.fill();
+// }
+
+function drawPoints(context, jStyle, extentFactor, coordinates, zoomLevel, properties, sprites) {
     context.translate(0.5, 0.5);
     var font = "Arial Unicode MS Regular";
     var fontSize = "16";
@@ -291,33 +538,6 @@ function drawPoints(context, jStyle, extentFactor, coordinates, properties, spri
         }
     }
     context.translate(-0.5, -0.5);
-}
-
-function drawLines(context, jStyle, extentFactor, coordinates) {
-    //context.lineWidth = 1;
-    context.lineJoin = "miter";
-    context.lineCap = "butt";
-    //context.strokeStyle = "#ffffff";
-    context.translate(0.5, 0.5);
-    if ("layout" in jStyle && "line-join" in jStyle.layout) context.lineJoin = jStyle.layout["line-join"];
-    if ("layout" in jStyle && "line-cap" in jStyle.layout) context.lineCap = jStyle.layout["line-cap"];
-    if ("paint" in jStyle && "line-width" in jStyle.paint) context.lineWidth = parseFloat(jStyle.paint["line-width"]) / 2;
-    if ("paint" in jStyle && "line-color" in jStyle.paint) context.strokeStyle = jStyle.paint["line-color"];
-
-    context.beginPath();
-    for (var i2 = 0; i2 < coordinates.length; i2++) {
-        var pos = coordinates[i2][0];
-        context.moveTo(pos.x * extentFactor, pos.y * extentFactor);
-
-        // lines
-        for (var j = 1; j < coordinates[i2].length; j++) {
-            pos = coordinates[i2][j];
-            context.lineTo(pos.x * extentFactor, pos.y * extentFactor);
-        }
-    }
-    context.stroke();
-    context.translate(-0.5, -0.5);
-    //context.fill();
 }
 
 VectorStyle.prototype._loadSprites = function(spriteIndexUrl, spriteImgUrl) {
