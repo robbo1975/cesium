@@ -4,6 +4,7 @@ import defined from "../Core/defined.js";
 import DeveloperError from "../Core/DeveloperError.js";
 import Point from '../ThirdParty/Point.js';
 import Resource from "../Core/Resource.js";
+import Cartesian2 from "../Core/Cartesian2.js";
 
 var UNKNOWN_FEATURE = 0;
 var POINT_FEATURE = 1;
@@ -70,10 +71,13 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
     // canvas.style.height = canvas.height / 2;
     // context.scale(2,2);
     //fix blur
+    //TODO: I think some of the blur is down to the zoom interpolation and also scaling the 'stops' against the metric
     var scale = window.devicePixelRatio;
-    canvas.width = canvas.width * scale;
-    canvas.height = canvas.height * scale;
-    context.scale(scale, scale);
+    // canvas.width = canvas.width * scale;
+    // canvas.height = canvas.height * scale;
+    // context.scale(scale, scale);
+    canvas.setAttribute('width', canvas.height * scale);
+    canvas.setAttribute('height', canvas.width * scale);
 
     //loop over styles (to get correct order of layers)
     for (var l = 0; l < styles.length; l++) {
@@ -118,9 +122,10 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
         context.lineCap = "butt";
         var fillColor = getPaintValue(jStyle, nativeTile.level, "fill-color");
         var outlineColor = getPaintValue(jStyle, nativeTile.level, "fill-outline-color");
-        //TODO: paint["fill-pattern"] pattern = ctx.createPattern; context.fillStyle = pattern; - I think this references a secondary style entry eg 'landcover/bare rock/pattern' -> 'landcover/bare rock/fill'
-        //fill pattern returns name of image stored in sprites image to use when calling context.createPattern(image, repetition);
         var fillPattern = getPaintValue(jStyle, nativeTile.level, "fill-pattern");
+        var pattern = getFillPattern(context, this._sprites[fillPattern]);
+        //TODO: paint["fill-pattern"] pattern = ctx.createPattern; context.fillStyle = pattern; this._sprites[iconImage]
+        //fill pattern returns name of image stored in sprites image to use when calling context.createPattern(image, repetition);
 
         var lineColor = getPaintValue(jStyle, nativeTile.level, "line-color");
         var lineWidth = getPaintValue(jStyle, nativeTile.level, "line-width");
@@ -137,6 +142,7 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
         var textLineHeight = getLayoutValue(jStyle, nativeTile.level, "text-line-height");
         var textField = getLayoutValue(jStyle, nativeTile.level, "text-field");
         var textOptional = getLayoutValue(jStyle, nativeTile.level, "text-optional");
+        var textOffset = getLayoutValue(jStyle, nativeTile.level, "text-offset");
         var textColor = getPaintValue(jStyle, nativeTile.level, "text-color");
         var textHaloColor = getPaintValue(jStyle, nativeTile.level, "text-halo-color");
         var textHaloWidth = getPaintValue(jStyle, nativeTile.level, "text-halo-width");
@@ -145,6 +151,7 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
 
         if (defined(fillColor)) context.fillStyle = fillColor;
         if (defined(outlineColor)) context.strokeStyle = outlineColor;
+        if (defined(pattern)) context.fillStyle = pattern;
 
         if (defined(lineColor)) context.strokeStyle = lineColor;
         if (defined(lineWidth)) context.lineWidth = lineWidth;
@@ -153,6 +160,7 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
 
         //TODO: multiplying by linewidth seems to degrade performance significantly - may need to pre-calculate this in a pre-step when loading style in
         //calculate actual dash size based on linewidth for zoom
+        context.setLineDash([]);
         if (defined(dashArray) && lineWidth) {
             for (var x = 0; x < dashArray.length; x++) {
                 dashArray[x] = dashArray[x];// * lineWidth;
@@ -160,23 +168,31 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
             context.setLineDash(dashArray);
         }
 
+
+        //context.font = ["16px Open Sans Regular","Arial Unicode MS Regular"];
+        var fontsize = "16";
+        var font = "Arial Unicode MS Regular";
+        if (defined(textSize)) fontsize = textSize;
+        if (defined(textFont)) font = textFont[0];
+        fontsize = fontsize + "px";
+        font = fontsize + " " + font;
+        context.font = font;
+        //console.log(font);
+        context.textAlign = "center";
+        context.textBaseline = "top";
+
         //TODO: set font information
         if (defined(textField)) {
             //if ("layout" in jStyle && "symbol-placement" in jStyle.layout && jStyle.layout["symbol-placement"] === "line") return;
             textField = textField.replace("{", "");
             textField = textField.replace("}", "");
-            textSize = textSize + "px";
-            textFont = textSize + " " + textFont[0];
-            context.font = textFont;
             //TODO: implement extraction of relevant value
-            context.textAlign = "center";
-            context.textBaseline = "middle";
             //TODO: these may override colours for lines/fills!
             context.fillStyle = textColor;
             context.strokeStyle = textColor;
         }
 
-
+        //context.translate(0.5, 0.5);
 
         // Features
         //loop through each feature within the layer
@@ -196,8 +212,8 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
             }
 
             //if the current feature's specified zoom is not within the current zoom, move to next feature
-            if ("_minzoom" in feature.properties && nativeTile.level < parseInt(feature.properties._minzoom)) { continue };
-            if ("_maxzoom" in feature.properties && nativeTile.level >= parseInt(feature.properties._maxzoom)) { continue; }
+            //if ("_minzoom" in feature.properties && nativeTile.level < parseInt(feature.properties._minzoom)) { continue };
+            //if ("_maxzoom" in feature.properties && nativeTile.level >= parseInt(feature.properties._maxzoom)) { continue; }
 
             var label = undefined;
             //console.log(textField);
@@ -206,73 +222,36 @@ VectorStyle.prototype.drawTile = function(canvas, tile, nativeTile, requestedTil
             //console.log(feature.properties);
 
             //only process known feature types
-            if (feature.type > UNKNOWN_FEATURE) {
-                var coordinates = getCoordinates(nativeTile, requestedTile, layer, feature);
-                if (!defined(coordinates)) {
-                    continue;
-                }
+            //if (feature.type > UNKNOWN_FEATURE) {
+            var coordinates = getCoordinates(nativeTile, requestedTile, layer, feature);
+            if (!defined(coordinates)) {
+                continue;
+            }
 
-                //context.translate(0.5, 0.5);//TODO: maybe can be removed - fix in main method
+            //context.translate(0.5, 0.5);//TODO: maybe can be removed - fix in main method
 
-                //TODO: selection based on feature type, but I suspect that it should be fully driven from the style
-
-                if (feature.type === POLYGON_FEATURE && jStyle.type === "fill") {
+            //TODO: selection based on feature type, but I suspect that it should be fully driven from the style
+            switch (jStyle.type) {
+                case "fill":
                     drawPath(context, extentFactor, coordinates);
                     context.closePath();
-                    if (defined(fillColor)) context.fill();
+                    if (defined(fillColor) || defined(pattern)) context.fill();
                     if (defined(outlineColor)) context.stroke();
-                } else if (feature.type === POLYGON_FEATURE && jStyle.type === "line") {
+                    break;
+                case "line":
                     drawPath(context, extentFactor, coordinates);
-                    //if (defined(fillColor)) context.fill();
+                    if (defined(fillColor)) context.fill();
                     if (defined(lineOpacity)) context.globalAlpha = lineOpacity;
                     if (defined(lineColor) && defined(lineWidth)) context.stroke();
                     context.globalAlpha = 1.0;
-                } else if (feature.type === POLYGON_FEATURE && jStyle.type === "symbol") {
-                    //TODO:
-                    //console.log("aa: " + label);
-                    //drawPoints(context, jStyle, extentFactor, coordinates, nativeTile.level, feature.properties, this._sprites);
+                    break;
+                case "symbol":
                     if (defined(label)) drawSpriteAndText(context, extentFactor, coordinates, label, this._sprites[iconImage])
-
-                    // if ("filter" in jStyle && jStyle.filter[1] === "_symbol" && "layout" in jStyle && "icon-image" in jStyle.layout) {
-                    //var imageName = jStyle.layout["icon-image"];
-                    //var imageData = sprites[imageName];
-
-                } else if (feature.type === LINESTRING_FEATURE && jStyle.type === "line") {
-                    drawPath(context, extentFactor, coordinates);
-                    if (defined(lineOpacity)) context.globalAlpha = lineOpacity;
-                    if (defined(lineColor) && defined(lineWidth)) context.stroke();
-                    context.globalAlpha = 1.0;
-                } else if (feature.type === LINESTRING_FEATURE && jStyle.type === "symbol") {
-                    //TODO:
-                    //console.log("bb:" + label);
-                    //drawLines(context, jStyle, extentFactor, coordinates, nativeTile.level);
-                    // drawPath(context, extentFactor, coordinates);
-                    // if (defined(lineOpacity)) context.globalAlpha = lineOpacity;
-                    // if (defined(lineColor) && defined(lineWidth)) context.stroke();
-                    // context.globalAlpha = 1.0;
-                    if (defined(label)) drawSpriteAndText(context, extentFactor, coordinates, label, this._sprites[iconImage])
-                } else if (feature.type === POINT_FEATURE && jStyle.type === "fill") {
-                    //TODO:
-                } else if (feature.type === POINT_FEATURE && jStyle.type === "line") {
-
-                } else if (feature.type === POINT_FEATURE && jStyle.type === "symbol") {
-                    //TODO:
-                    // console.log("cc: " + label);
-                    //drawPoints(context, jStyle, extentFactor, coordinates, nativeTile.level, feature.properties, this._sprites);
-
-                    if (defined(label)) drawSpriteAndText(context, extentFactor, coordinates, label, this._sprites[iconImage])
-                } else {
-                    console.log("***NOT POLYGON***" + feature.type + " " + jStyle.type);
-                    console.log(
-                        "Unexpected geometry type: " +
-                        feature.type +
-                        " in region map on tile " +
-                        [requestedTile.level, requestedTile.x, requestedTile.y].join("/")
-                    );
-                }
-                //context.translate(-0.5, -0.5);//TODO: maybe can be removed - fix in main method
+                    break;
             }
+
         }
+        //context.translate(-0.5, -0.5);
     }
 
 };
@@ -338,7 +317,7 @@ function getCoordinates(nativeTile, requestedTile, layer, feature) {
     //         requestedTile
     //     );
     // } else {
-        coordinates = feature.loadGeometry();
+    coordinates = feature.loadGeometry();
     // }
     return coordinates;
 }
@@ -411,20 +390,72 @@ function drawPath(context, extentFactor, coordinates) {
 }
 
 //function used to draw  text and sprites onto canvas
-function drawSpriteAndText(context, extentFactor, coordinates, text, image) {
-    for (var i2 = 0; i2 < coordinates.length; i2++) {
-        var pos = coordinates[i2][0];
-        var xPos = pos.x * extentFactor;
-        var yPos = pos.y * extentFactor;
+// function drawSpriteAndText(context, extentFactor, coordinates, text, image) {
+//     for (var i2 = 0; i2 < coordinates.length; i2++) {
+//         var pos = coordinates[i2][0];
+//         var xPos = pos.x * extentFactor;
+//         var yPos = pos.y * extentFactor;
+//         // if (jStyle.id==="road/label/residential"){
+//         //     console.log(coordinates);
+//         //     console.log(feature);
+//         //     console.log(jStyle);
+//         //     }
 
-        // var t = context.measureText(text);
-        // var tt = {};
-        // tt.y1 = t.actualBoundingBoxAscent + yPos;
-        // tt.y2 = t.actualBoundingBoxDescent + yPos;
-        // tt.x1 = t.actualBoundingBoxLeft + xPos;
-        // tt.x2 = t.actualBoundingBoxRight + xPos;
-        if (defined(image)) drawSprite(context, extentFactor, xPos, yPos, image);
-        context.fillText(text, xPos, yPos);
+//         // var t = context.measureText(text);
+//         // var tt = {};
+//         // tt.y1 = t.actualBoundingBoxAscent + yPos;
+//         // tt.y2 = t.actualBoundingBoxDescent + yPos;
+//         // tt.x1 = t.actualBoundingBoxLeft + xPos;
+//         // tt.x2 = t.actualBoundingBoxRight + xPos;
+//         if (defined(image)) drawSprite(context, extentFactor, xPos, yPos, image);
+//         context.fillText(text, xPos, yPos);
+//     }
+// }
+var temp = true;
+function drawSpriteAndText(context, extentFactor, coordinates, text, image) {
+    context.beginPath();
+    for (var i2 = 0; i2 < coordinates.length; i2++) {
+        var pos = coordinates[i2][0];//first coordinate
+        //TODO: text alignment and offset
+        // if (coordinates[i2].length > 1) {
+        //     try {
+        //         if (temp) {
+        //             context.strokeStyle = "black";
+        //             context.fillStyle = "black";
+        //             temp = false;
+        //         } else {
+        //             context.strokeStyle = "red";
+        //             context.fillStyle = "red";
+        //             temp = true;
+        //         }
+
+        //         context.save();
+        //         var v1 = Cartesian2.fromElements(pos.x * extentFactor, pos.y * extentFactor);
+        //         var pos2 = coordinates[i2][coordinates[i2].length - 1];//last coordinate
+        //         var v2 = Cartesian2.fromElements(pos2.x * extentFactor, pos2.y * extentFactor);
+        //         var v3 = Cartesian2.subtract(v1, v2, new Cartesian2());
+        //         var v4 = Cartesian2.multiplyByScalar(v3, 0.5, new Cartesian2());
+        //         var angle = Cartesian2.angleBetween(v2, v1, new Cartesian2());
+
+        //         //context.translate(v4.x, v4.y);
+        //         context.translate(v1.x, v1.y);
+        //         context.rotate(angle);
+        //         if (defined(image)) drawSprite(context, extentFactor, 0.0, 0.0, image);
+        //         context.fillText(text, 0.0, 0.0);
+        //         context.restore();
+
+        //         context.moveTo(pos.x * extentFactor, pos.y * extentFactor);
+        //         context.lineTo(pos2.x * extentFactor, pos2.y * extentFactor);
+        //         context.lineWidth = 1;
+        //         context.stroke();
+        //     } catch (error) {
+        //         console.log(error);
+        //     }
+        //     return;
+        // }
+
+        if (defined(image)) drawSprite(context, extentFactor, pos.x, pos.y, image);
+        context.fillText(text, pos.x * extentFactor, pos.y * extentFactor);
     }
 }
 
@@ -436,6 +467,17 @@ function drawSprite(context, extentFactor, xPos, yPos, image) {
     offCtx.putImageData(image, 0, 0);
     //draw on main canvas (putimage will lose alpha)
     context.drawImage(offCtx.canvas, xPos - offCtx.canvas.width / 2 * extentFactor, yPos - offCtx.canvas.height / 2 * extentFactor);
+}
+
+//TODO: not working
+function getFillPattern(context, image) {
+    if (!defined(image)) return undefined;
+
+    var offscreen = new OffscreenCanvas(image.width, image.height);
+    var offcontext = offscreen.getContext('2d');
+    offcontext.putImageData(image, 0, 0);
+    var pattern = context.createPattern(offscreen, 'repeat');
+    return pattern;
 }
 
 //function used to load in and cache locally the sprites from json/png files
